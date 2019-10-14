@@ -1,0 +1,39 @@
+.*.swp
+*.bak
+*~
+
+# GHC build system produces these
+GNUmakefile
+
+dist
+dist-install
+dist-boot
+dist-newstyle
+ghc.mk
+.hpc
+
+# Cabal sandbox
+.cabal-sandbox
+cabal.sandbox.config
+
+# Coverage reports
+*.tix
+
+# Haskell build artifacts
+*.o
+*.hi
+*.chi
+*.chs.h
+*.dyn_o
+*.dyn_hi
+*.prof
+*.aux
+*.hp
+*.eventlog
+
+# cabal new-build artifacts
+cabal.project.local
+.ghc.environment.*
+
+# stack artifacts
+.stack-work
