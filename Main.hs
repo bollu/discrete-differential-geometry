@@ -9,10 +9,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Main where
+import qualified GHC.TypeNats as TN
 import Control.Monad(ap, join)
 import qualified Data.Map as M
 import qualified Data.List as L
+import Data.Proxy
 -- | reals
 type R = Float
 -- | integers
@@ -48,6 +52,9 @@ class Cohomology where
 data FreeAb (a :: Nat -> *) (n:: Nat)   where
     FreeAb :: [(a n, Z)] -> FreeAb a n
 
+singletonFreeAb :: a n -> Z -> FreeAb a n
+singletonFreeAb a i = FreeAb [(a, i)]
+
 unFreeAb :: FreeAb a n -> [(a n, Z)]
 unFreeAb (FreeAb coeffs) = coeffs
 
@@ -71,6 +78,11 @@ simplifyFreeAb :: (Ord (a n)) => FreeAb a n -> FreeAb a n
 simplifyFreeAb (FreeAb coeffs) = 
   let coeffs' = M.toList $ M.fromListWith (+) coeffs
   in FreeAb $ [(a, c) | (a, c) <- coeffs', c /= 0]
+
+-- | evaluate a function on a free abelian group
+-- nice. (a -> r) -> r. TODO: can we think of this as continuation?
+evalFreeAb :: Num r => FreeAb a n -> (a n -> r) -> r
+evalFreeAb (FreeAb coeffs) f = sum $ [(fromIntegral c) * (f a) | (a, c) <- coeffs ]
 
 
 class GradedFunctor (f ::  (Nat -> *) -> Nat -> *) where
@@ -137,12 +149,13 @@ data DiscreteManifold (b :: *) (n :: Nat) where
     Point :: b -> DiscreteManifold b NZ
     Boundary :: FreeAb (DiscreteManifold b) n -> DiscreteManifold b (NS n)
 
-unBoundary :: DiscreteManifold b (NS n) -> FreeAb (DiscreteManifold b) n
-unBoundary (Boundary chain) = chain
+getManifoldBoundary :: DiscreteManifold b (NS n) -> FreeAb (DiscreteManifold b) n
+getManifoldBoundary (Boundary chain) = chain
 
 
-boundaryab :: (Ord (DiscreteManifold a n)) =>  FreeAb (DiscreteManifold a) (NS n)  -> FreeAb  (DiscreteManifold a) n
-boundaryab chain_manifold = simplifyFreeAb $ gjoin $ gfmap unBoundary chain_manifold
+-- ACHIEVEMENT 1: HAVE A THEORY OF CHAINS
+getChainBoundary :: FreeAb (DiscreteManifold b) (NS n) -> FreeAb (DiscreteManifold b) n
+getChainBoundary chain =  chain `gbind` getManifoldBoundary
 
 
 
@@ -184,12 +197,16 @@ data Form (b :: *) (n :: Nat) where
     Function :: (DiscreteManifold b n -> R) -> Form b n
     Differential :: Form b n -> Form b (NS n)
 
- 
 
--- instance Homology (DiscreteManifold b) where
---   boundary (Boundary chainSN) = Boundary $ FreeAb $ M.fromListWith (+) $ do
---         (mapsN, c) <- M.toList $ unFreeAb $ chainSN
---         return $ (mapsN, c)
+-- S = dim (n + 1) | boundary(S) = dimension n
+-- df = dim (n + 1) | f = dimension n
+-- | integral_{S} domega = integral_dS omega
+-- ACHIEVEMENT 2: HAVE A THEORY OF COCHAINS AND INTEGRATION
+integrateForm :: Form b n -> FreeAb (DiscreteManifold b) n -> R
+integrateForm (Function f) m =  evalFreeAb m f
+integrateForm (Differential f) m = integrateForm f (getChainBoundary m)
+
+ 
     
 
 instance CohomologyN (Form b) where
@@ -214,13 +231,107 @@ ca = a -. c
 loop :: DiscreteManifold Char (NS (NS NZ))
 loop = fromBoundary [ab, bc, ca]
 
--- Simplifying using loops is monadic!
+-- | Simplifying using loops is monadic!
 loopBoundary :: FreeAb (DiscreteManifold Char) NZ
-loopBoundary = simplifyFreeAb $  unBoundary  loop `gbind` unBoundary 
+loopBoundary = simplifyFreeAb $  getManifoldBoundary  loop `gbind` getManifoldBoundary
+
+f :: Form Char NZ
+f = Function $ 
+    \d -> if d == a then 1 else if d == b then 2 else if d == c then 4 else error "unknown"
+
+
+mainForms :: IO ()
+mainForms = do
+  print $ integrateForm  (Differential  f) (getManifoldBoundary loop) -- 0
+  print $ integrateForm  (Differential (Differential  f)) (singletonFreeAb loop 1)-- 0
+  print $ integrateForm f (singletonFreeAb a 1)
+  print $ integrateForm f (singletonFreeAb b 1)
+  print $ integrateForm f (singletonFreeAb c 1)
+  print $ integrateForm f (getManifoldBoundary ab)
+
+
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- ================================================================
+-- TRYING TO DEFINE CHAIN
+
+data Chain (n :: Nat) a where
+    C0 :: a -> Chain NZ a
+    CS :: [(Chain n a, Z)] -> Chain (NS n) a
+
+deriving instance Show a => Show (Chain n a)
+
+-- | Re-weigh the outermost elements of the chain by weight w
+chainWeigh :: Z -> Chain n a -> Chain n a
+chainWeigh _ (C0 a) = C0 a
+chainWeigh w (CS acs) = CS [(a, w*c) | (a, c) <- acs]
+
+instance Functor (Chain n) where
+    fmap f (C0 a) = C0 (f a)
+    fmap f (CS coeffs) = CS [(fmap f chain, c) | (chain, c) <- coeffs]
+
+
+type family PrevN a where
+    PrevN NZ = NZ
+    PrevN (NS n) = n
+
+type family PlusN a b where
+    PlusN NZ NZ = NZ
+    PlusN NZ a = a
+    PlusN a NZ = a
+    PlusN (NS n) m = NS (PlusN n m)
+
+class GradedMonad2 (f :: Nat -> * -> *) where
+    greturn2 :: a -> f NZ a
+    gbind2 :: f (NS (NS n)) a -> (f (NS n) a -> f (PrevN m) b) -> f m b
+
+instance GradedMonad2 Chain where
+    greturn2 = C0
 
 
 
+chainNormalize :: Ord (Chain (PrevN n) a) => Chain n a -> Chain n a
+chainNormalize (C0 a) = C0 a
+chainNormalize (CS coeffs) = CS $ M.toList $ M.fromListWith (+) coeffs
+
+chainBoundary :: Chain (NS (NS n)) a -> Chain (NS n) a
+chainBoundary (CS coeffs_n_plus_1) = CS $ do
+    (CS chain_n_plus_1, c) <- coeffs_n_plus_1
+    (chain_n, c') <- chain_n_plus_1
+    return (chain_n, c * c')
+
+
+a', b', c' :: Chain NZ Char
+a' = C0 'a'
+b' = C0 'b'
+c' = C0 'c'
+
+ab', bc', ca' :: Chain (NS NZ) Char
+ab' = CS [(b', 1), (a', -1)]
+bc' = CS [(c', 1), (b', -1)]
+ca' = CS [(c', 1), (a', -1)]
+
+abc' :: Chain (NS (NS NZ)) Char
+abc' = CS [(ab', 1), (bc', 1), (ca', 1)]
 
 main :: IO ()
 main = do
+  mainForms
   putStrLn "Hello, Haskell!"
