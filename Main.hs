@@ -16,7 +16,10 @@ import qualified GHC.TypeNats as TN
 import Control.Monad(ap, join)
 import qualified Data.Map as M
 import qualified Data.List as L
+import qualified Prob as P
+import qualified Arr as A
 import Data.Proxy
+-- TODO: use http://penrose.ink/ to generate diagrams!
 -- | reals
 type R = Float
 -- | integers
@@ -30,8 +33,6 @@ type (#>) a b = M.Map a b
 -- | evaluate a finite map
 (#$) :: Ord a => (a #> b) -> a -> b
 (#$) = (M.!)
-
-
 
 
 -- | homology provides a boundary operator over a graded type a
@@ -51,6 +52,7 @@ class Cohomology where
 -- | free abelian group over 'a'
 data FreeAb (a :: Nat -> *) (n:: Nat)   where
     FreeAb :: [(a n, Z)] -> FreeAb a n
+
 
 singletonFreeAb :: a n -> Z -> FreeAb a n
 singletonFreeAb a i = FreeAb [(a, i)]
@@ -149,6 +151,15 @@ data DiscreteManifold (b :: *) (n :: Nat) where
     Point :: b -> DiscreteManifold b NZ
     Boundary :: FreeAb (DiscreteManifold b) n -> DiscreteManifold b (NS n)
 
+
+
+-- | find the image of a discrete manifold under a mapping of points.
+mapDiscreteManifold :: (a -> b) -> DiscreteManifold a n -> DiscreteManifold b n
+mapDiscreteManifold f (Point a) = Point (f a)
+mapDiscreteManifold f (Boundary ab) = Boundary $ gfmap (mapDiscreteManifold f) ab 
+
+
+
 getManifoldBoundary :: DiscreteManifold b (NS n) -> FreeAb (DiscreteManifold b) n
 getManifoldBoundary (Boundary chain) = chain
 
@@ -206,12 +217,15 @@ integrateForm :: Form b n -> FreeAb (DiscreteManifold b) n -> R
 integrateForm (Function f) m =  evalFreeAb m f
 integrateForm (Differential f) m = integrateForm f (getChainBoundary m)
 
- 
-    
+
+pullbackForm :: (DiscreteManifold a n -> DiscreteManifold b m) -> Form b m -> Form a n
+pullbackForm fwd (Function f) = Function (f . fwd)
+pullbackForm fwd (Differential f) = undefined
+
 
 instance CohomologyN (Form b) where
     -- | automatic optimisation: boundary of boundary is zero
-    coboundaryn (Differential (Differential _)) = Function (\_ -> 0)
+    -- coboundaryn (Differential (Differential _)) = Function (\_ -> 0)
     coboundaryn x = Differential x
 
 -- Integral(omega) (dS) = integral (dOmega) s
@@ -248,6 +262,44 @@ mainForms = do
   print $ integrateForm f (singletonFreeAb b 1)
   print $ integrateForm f (singletonFreeAb c 1)
   print $ integrateForm f (getManifoldBoundary ab)
+
+-- Step 2: Build probability theory
+-- ================================
+-- Discrete mapping, takes points to ponts. Can we determine everything else
+-- from this?
+
+-- | A distribution is a 0-form on the space
+
+type Distribution a = Form a NZ
+
+data RandomVariable a where 
+    Return :: a -> RandomVariable a
+    Sample01 :: (Bool -> RandomVariable a) -> RandomVariable a
+   deriving(Functor)
+
+instance Monad RandomVariable where
+    return = Return
+    (Return a) >>= a2mb = a2mb a
+    (Sample01 maproducer) >>= a2mb = 
+        Sample01 $ \b -> (maproducer b) >>= a2mb
+
+instance Applicative RandomVariable where
+    pure = return
+    (<*>) = ap
+
+-- | bilinear function between points
+type Metric a = DiscreteManifold a NZ -> DiscreteManifold a NZ -> R
+
+-- | Given a random variable, approximate the distribution
+-- | Can we _create_ an over-approximation of the domain where we sample
+-- from, and then use that as a manifold???
+calculateDistribution :: Eq a => RandomVariable a -> Distribution a
+calculateDistribution (Return a) = undefined
+
+
+-- | Sample from a given distribution
+sampleDistribution :: Eq a => Distribution a -> IO [a]
+sampleDistribution = undefined
 
 
 -- ================================================================
@@ -305,8 +357,6 @@ class GradedMonad2 (f :: Nat -> * -> *) where
 instance GradedMonad2 Chain where
     greturn2 = C0
 
-
-
 chainNormalize :: Ord (Chain (PrevN n) a) => Chain n a -> Chain n a
 chainNormalize (C0 a) = C0 a
 chainNormalize (CS coeffs) = CS $ M.toList $ M.fromListWith (+) coeffs
@@ -334,4 +384,4 @@ abc' = CS [(ab', 1), (bc', 1), (ca', 1)]
 main :: IO ()
 main = do
   mainForms
-  putStrLn "Hello, Haskell!"
+  A.main
