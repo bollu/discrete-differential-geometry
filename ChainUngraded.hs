@@ -49,7 +49,7 @@ evalFreeAb (FreeAb ais) f = mconcat [i *<> f a | (a, i) <- ais]
 -- grade. So I can create something of the sort:
 -- Boundary ([Vertex 'b', Boundary [(2, CRet 'a')] ])
 -- which is incorrect!
-data Chain a = Vertex a | Boundary (FreeAb (Chain a)) deriving(Eq, Ord)
+data Chain a = Vertex a | Boundary { boundary :: FreeAb (Chain a) } deriving(Eq, Ord)
 
 
 scaleChain :: Int -> Chain a -> Chain a
@@ -71,10 +71,6 @@ instance (Ord a, Show a) => Show (Chain a) where
 i *<> c = scaleChain i c
 -}
 
-boundary :: Chain a -> FreeAb (Chain a)
-boundary (Boundary b) = b
-boundary (Vertex a) = error "unable to take boundary of vertex"
-
 
 -- | We need the inner data to be a chain for this to work
 chainCollapseLayer :: Ord a => Chain a -> FreeAb (Chain a)
@@ -93,13 +89,22 @@ abbc = Boundary $ FreeAb $ [(ab, 1), (bc, 1)]
 
 
 -- | differential form
-data Form a = Function (a -> Double) | Der (Form a)
+data Form a = Function { runFunction :: (a -> Double) } | Der (Form a)
+
 
 -- | integral omega df = integral d(omega) f
-integrateForm :: Form a -> Chain a -> Sum Double
+integrateForm :: Ord a => Show a => Form a -> Chain a -> Sum Double
 integrateForm (Function f) (Vertex a) = Sum $ f a
 integrateForm (Der f) (Boundary b) = evalFreeAb b (integrateForm f)
+integrateForm f b = error $ "cannot integrate form on boundary: |" <> show b <> "|"
 
+formabc :: Form  Char
+formabc = Function $ \a -> 
+  case a of
+    'a' -> 1
+    'b' -> 2
+    'c' -> 3
+    
 
 main :: IO ()
 main = do
@@ -109,6 +114,9 @@ main = do
   putStrLn $ "abbc:"  <> show abbc
   putStrLn $ "D^2 abbc:"  <> show (chainCollapseLayer abbc)
   putStrLn $ "ab:"  <> show ab
+
+  putStrLn $ "integrating dformabc on ab" <> show (integrateForm (Der formabc) ab)
+  putStrLn $ "integrating ddformabc on abc" <> show (integrateForm (Der (Der formabc)) abc)
   -- print (chainCollapseLayer ab)
   putStrLn "^^^[ChainUngraded]^^^"
 
