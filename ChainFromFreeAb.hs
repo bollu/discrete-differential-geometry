@@ -23,7 +23,9 @@ newtype FreeAb a = FreeAb (M.Map a Int) deriving(Eq, Ord)
 
 instance Show a => Show (FreeAb a) where
     show (FreeAb ias) = 
-        intercalate "+" [ show i <> show a | (a, i) <- M.toList $ M.filter (/= 0) ias]
+        case [ show i <> show a | (a, i) <- M.toList $ M.filter (/= 0) ias] of
+         [] -> "EMPTY"
+         s -> intercalate "+" s
 
 freeabScale :: Int -> FreeAb a -> FreeAb a
 freeabScale i (FreeAb a) = FreeAb $ M.map (* i) a
@@ -94,8 +96,8 @@ unchain (Chain ais) = ais
 -- this, since I need to do something different depending on the *value* of n,
 -- and I can't reflect on `n` that easily :( I really don't want to
 -- `singleton`, but it looks like I might have to :/
-chainBoundary :: Ord a => Chain (NS (NS n)) a -> FreeAb (Chain n a)
-chainBoundary (Chain ais) = ais `freeabBind` unchain
+chainBoundary :: Ord a => Chain (NS n) a -> FreeAb (Chain n a)
+chainBoundary (Chain ais) = ais
 
 
 a, b, c :: Chain NZ Char
@@ -116,6 +118,7 @@ main = do
   putStrLn "vvv[ChainFromFreeAb]vvv"
   putStrLn $  "abc: " <> show abc
   putStrLn $  "boundary abc: " <> show (chainBoundary abc)
+  putStrLn $  "boundary . boundary abc: " <> show ((chainBoundary abc) `freeabBind` unchain)
   -- | putStrLn $  "boundary ab: " <> show (chainBoundary ab)
   -- TODO: get this boundary working
   -- putStrLn $  "boundary ab: " <> show (chainBoundary ab)

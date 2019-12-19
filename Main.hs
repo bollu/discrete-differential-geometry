@@ -388,6 +388,6 @@ main :: IO ()
 main = do
   mainForms
   A.main
-  -- CG.main
+  CG.main
   CUG.main
   CAB.main
