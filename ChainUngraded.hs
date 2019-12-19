@@ -104,7 +104,6 @@ formabc = Function $ \a ->
     'a' -> 1
     'b' -> 2
     'c' -> 3
-    
 
 main :: IO ()
 main = do
@@ -120,3 +119,5 @@ main = do
   -- print (chainCollapseLayer ab)
   putStrLn "^^^[ChainUngraded]^^^"
 
+
+-- So far, we have homology and cohomology. Next, we need 
