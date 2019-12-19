@@ -2,7 +2,46 @@ module ChainUngraded where
 import Control.Monad
 import Data.List (intercalate)
 import qualified Data.Map as M
+import Data.Monoid(Sum, Sum(..))
 
+type FreeAbTerm a = (a, Int)
+
+data FreeAb a = FreeAb [FreeAbTerm a] deriving(Eq, Ord)
+instance Show a => Show (FreeAb a) where
+  show (FreeAb ais) = intercalate " + " [ show i <> show a | (a, i) <- ais]
+
+instance Semigroup (FreeAb a) where
+    (FreeAb as) <> (FreeAb bs) = FreeAb $ as <> bs
+
+instance Monoid (FreeAb a) where
+    mempty = FreeAb []
+
+scaleTerm :: Int -> FreeAbTerm a -> FreeAbTerm a
+scaleTerm i (a, j) = (a, i*j)
+
+simplifyFreeAb :: Ord a => FreeAb a -> FreeAb a
+simplifyFreeAb (FreeAb ais) = 
+  FreeAb $ M.toList $ M.filter (/= 0) $ M.fromListWith (+) ais
+
+
+class Monoid m => ZModule m where
+  -- | action of Z 
+  actZ :: Int -> m -> m
+  (*<>) :: Int -> m -> m
+  (*<>) = actZ
+
+
+instance Num a => ZModule (Sum a) where
+  actZ i (Sum r) = Sum $ fromIntegral i * r
+
+instance ZModule (FreeAb a) where
+  actZ i (FreeAb ais) = FreeAb $ map (scaleTerm i) ais
+   
+
+-- | This is a continuation: (a -> r) -> r
+-- TODO: consider doing something with the continuation
+evalFreeAb :: ZModule r => FreeAb a -> (a -> r) -> r
+evalFreeAb (FreeAb ais) f = mconcat [i *<> f a | (a, i) <- ais]
 
 -- This is pretty unsatisfactory, IMO
 
@@ -10,74 +49,57 @@ import qualified Data.Map as M
 -- grade. So I can create something of the sort:
 -- Boundary ([Vertex 'b', Boundary [(2, CRet 'a')] ])
 -- which is incorrect!
-data Chain a = Vertex a | Boundary [(Chain a, Int)] deriving(Eq, Ord)
+data Chain a = Vertex a | Boundary (FreeAb (Chain a)) deriving(Eq, Ord)
 
 
+scaleChain :: Int -> Chain a -> Chain a
+scaleChain i (Boundary f) = Boundary (i *<> f)
+scaleChain i _ = error "canot scale 0D chain"
 
 instance (Ord a, Show a) => Show (Chain a) where
   show (Vertex a) = show a
-  show layer = case simplifyChain layer of
-                (Boundary ais) -> "<" <> intercalate " + " [ show i <> show a | (a, i) <- ais] <> ">"
+  show (Boundary ais) = case simplifyFreeAb ais of
+                        ais -> "<" <> show ais <> ">"
 
-scaleChain :: Int -> Chain a -> Chain a
-scaleChain _ (Vertex a) = error "cannot scale 0D chain"
-scaleChain j (Boundary ais) = Boundary [(a, i*j) | (a, i) <- ais]
 
-simplifyChain :: Ord a => Chain a -> Chain a
-simplifyChain (Boundary ais) = 
-  Boundary $ M.toList $ M.filter (/= 0) $ M.fromListWith (+) ais
-simplifyChain a = a
 
-instance Semigroup (Chain a) where
-    Boundary as <> Boundary bs = Boundary $ as <> bs
-    _ <> _ = error $ "cannot concat chains of unequal grade"
-
--- | We can only create a unit for a grade 0 object
-instance Monoid (Chain a) where
-   mempty = Boundary []
-
-class Monoid a => AbelianGroup a where
-    inv :: a -> a
-
-instance AbelianGroup (Chain a) where
-    inv (Boundary ais) = Boundary [(a, -i) | (a, i) <- ais]
-    inv (Vertex v) = Boundary[(Vertex v, -1)]
-
+{-
 (<>-) :: Chain a -> Chain a -> Chain a
 (<>-) c c' = c <> inv c'
 
 (*<>) :: Int -> Chain a -> Chain a
 i *<> c = scaleChain i c
+-}
 
+boundary :: Chain a -> FreeAb (Chain a)
+boundary (Boundary b) = b
+boundary (Vertex a) = error "unable to take boundary of vertex"
 
-instance Monad Chain where
-  return = Vertex
-  -- Chain a -> (a -> Chain b) -> Chain b
-  (Vertex a) >>= f = f a
-  (Boundary ais) >>= f =
-    Boundary [(a >>= f, i) | (a, i) <- ais]
-
-instance Applicative Chain where
-  pure = return
-  (<*>) = ap
-
-instance Functor Chain where
-    fmap f ca = ca >>= (return . f)
 
 -- | We need the inner data to be a chain for this to work
-chainCollapseLayer :: Ord a => Chain a -> Chain a
+chainCollapseLayer :: Ord a => Chain a -> FreeAb (Chain a)
 chainCollapseLayer (Vertex a) = error "cannot take boundary of 0D chain"
-chainCollapseLayer (Boundary ais) =  
-    mconcat [(scaleChain i a) | (a, i) <- ais]
+chainCollapseLayer (Boundary ais) = simplifyFreeAb $ evalFreeAb ais (boundary)
+
 a, b, c, ab, bc, ca, abc, abbc :: Chain Char
 a = Vertex 'a'
 b = Vertex 'b'
 c = Vertex 'c'
-ab = Boundary [(b, 1), (a, -1)]
-bc = Boundary [(c, 1), (b, -1)]
-ca = Boundary [(a, 1), (c, -1)]
-abc = Boundary [(ab, 1), (bc, 1), (ca, 1)]
-abbc = Boundary [(ab, 1), (bc, 1)]
+ab = Boundary $ FreeAb $ [(b, 1), (a, -1)]
+bc = Boundary $ FreeAb $ [(c, 1), (b, -1)]
+ca = Boundary $ FreeAb $ [(a, 1), (c, -1)]
+abc = Boundary $ FreeAb $ [(ab, 1), (bc, 1), (ca, 1)]
+abbc = Boundary $ FreeAb $ [(ab, 1), (bc, 1)]
+
+
+-- | differential form
+data Form a = Function (a -> Double) | Der (Form a)
+
+-- | integral omega df = integral d(omega) f
+integrateForm :: Form a -> Chain a -> Sum Double
+integrateForm (Function f) (Vertex a) = Sum $ f a
+integrateForm (Der f) (Boundary b) = evalFreeAb b (integrateForm f)
+
 
 main :: IO ()
 main = do
@@ -89,3 +111,4 @@ main = do
   putStrLn $ "ab:"  <> show ab
   -- print (chainCollapseLayer ab)
   putStrLn "^^^[ChainUngraded]^^^"
+
