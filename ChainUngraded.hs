@@ -120,4 +120,14 @@ main = do
   putStrLn "^^^[ChainUngraded]^^^"
 
 
--- So far, we have homology and cohomology. Next, we need 
+-- So far, we have homology and cohomology. Next, we need a metric. Alternatively,
+-- we need an embedding into |R^n and a description of the tangent space.
+-- We will create a "local S^n-1" at each point, so the freedom in the tangent
+-- space will be "point on S^n-1, radius".
+-- Need to normalize the angle across all angles. in dimension `n`, we need
+-- `n` points to create a solid angle, I think?
+-- At any rate, this part is going to be _messy_, unfortunately :/
+-- I wish there was a better way to implement this
+
+
+-- Random variables, hamiltonian monte carlo

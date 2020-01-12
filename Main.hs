@@ -21,6 +21,7 @@ import qualified Arr as A
 import qualified ChainGraded as CG
 import qualified ChainUngraded as CUG
 import qualified ChainFromFreeAb as CAB
+import qualified Simplex as Simplex
 import Data.Proxy
 -- TODO: use http://penrose.ink/ to generate diagrams!
 -- | reals
@@ -391,3 +392,4 @@ main = do
   CG.main
   CUG.main
   CAB.main
+  Simplex.main
